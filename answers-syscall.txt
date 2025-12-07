@@ -1,0 +1,6 @@
+1.syscall 是被 usertrap 调用的。
+2.p->trapframe->a7 = 0x7 (7)，对应系统调用号 SYS_exec，即 initcode 正在执行 exec("/init", argv)。
+3.先前的 CPU 模式是用户态（SPP=0 表示从 U 模式陷入）。
+4.内核在 sepc=0x80001bfe 处的指令是对地址 0 的取数，例如 lw a5, 0(zero)；目的寄存器 a5 就是变量 num。
+5.内核崩溃原因：在内核态解引用地址 0，内核页表未映射该地址，触发页面异常；scause=0xd 也表明是取数页故障。
+6.当时运行的进程名：initcode，pid：1。
