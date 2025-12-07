@@ -1,0 +1,27 @@
+# answers-pgtbl.txt（pgtbl 实验书面回答）
+
+1) print_pgtbl 输出逐项说明（来自本次运行的 pgtbltest）
+	- perm 位含义：V=0x1, R=0x2, W=0x4, X=0x8, U=0x10, G=0x20, A=0x40, D=0x80。
+	- va 0x0     -> pte 0x21FC885B, pa 0x87F22000, perm 0x5B = V|R|X|U|A：用户可读/可执行、有效、已访问，无写/脏；典型用户代码页。
+	- va 0x1000  -> pte 0x21FC7C1B, pa 0x87F1F000, perm 0x1B = V|R|X|U：用户可读/可执行、有效，无写、未访问标记；用户代码/只读数据。
+	- va 0x2000  -> pte 0x21FC7817, pa 0x87F1E000, perm 0x17 = V|R|W|U：用户可读写，非可执行；应是用户数据/堆页。
+	- va 0x3000  -> pte 0x21FC7407, pa 0x87F1D000, perm 0x07 = V|R|W：内核可读写，无 U/X；内核专用数据页。
+	- va 0x4000  -> pte 0x21FC70D7, pa 0x87F1C000, perm 0xD7 = V|R|W|U|A|D：用户可读写，已访问且脏；用户数据页（被写过）。
+	- va 0x5000–0x9000 -> pte 0, 未映射；对应虚拟页洞。
+	- va 0xFFFF6000–0xFFFFD000 -> pte 0, 未映射；高地址段的空洞。
+	- va 0xFFFFE000 -> pte 0x21FD08C7, pa 0x87F42000, perm 0xC7 = V|R|W|A|D：内核读写页，无 U/X，已访问且脏；常见为 trapframe 或内核栈映射。
+	- va 0xFFFFF000 -> pte 0x2000184B, pa 0x80006000, perm 0x4B = V|R|X|A：内核只读+可执行页（无 W/U/D），已访问；通常是 trampoline 映射。
+
+2) ugetpid_test 行为
+	- 运行中在 sepc=0x53e 触发 scause=0xd（load page fault），stval=0x3fffffd000，说明用户态访问 USYSCALL（0x3fffffd000）未映射或缺少 U|R 位。
+	- 预期做法：在进程页表中映射一页用户可读（U|R|V，通常不需要 W/X）的小页到内核维护的 usyscall 结构，写入当前 pid，让用户态 ugetpid() 直接读取；缺少该映射会导致上述缺页异常。
+
+3) print_kpgtbl 输出/映射说明
+	- 该测试期望打印内核页表树，看到自低到高的层级指针和典型内核映射：低端物理直映（0, 0x1000, 0x2000, 0x3000…）、KERNBASE 及高地址（如 0xffffffffc0000000 或等价的 Sv39 符号地址）、再到 trampoline（…fff000）等。
+	- 所有内核映射都不应带 U 位，权限多为 RW (数据) 或 RX (文本)，trampoline 通常 RX，trapframe 区域 RW，无 U。
+	- 若缺少这些映射或 walk/print 逻辑错误，测试会缺行（正是当前报的多条 MISSING）。
+
+4) superpg_test 说明
+	- 该测试检查是否使用超级页（2MiB、Sv39 的级别-1叶子）为内核大块区域建立映射，减少页表层数/提高 TLB 命中。
+	- 典型做法：在 kvminit/kvmmap 中，对物理内存直映部分按 2MiB 对齐+成段映射；确保 PTE W/R 设置正确，且不带 U，必要时保持 X 位仅给内核文本段。
+	- 若未使用超级页或权限/对齐出错，会导致 superpg_test 失败。
