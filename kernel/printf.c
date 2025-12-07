@@ -166,6 +166,7 @@ panic(char *s)
   printf("panic: ");
   printf("%s\n", s);
   panicked = 1; // freeze uart output from other CPUs
+  backtrace();
   for(;;)
     ;
 }
@@ -175,4 +176,23 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  printf("backtrace:\n");
+  while(fp){
+    // 当前页边界，用于判定是否越出本核栈
+    uint64 base = PGROUNDDOWN(fp);
+    // 取返回地址和上一帧 fp
+    uint64 ra = *(uint64*)(fp - 8);
+    uint64 prev = *(uint64*)(fp - 16);
+    printf("%p\n", (void*)ra);
+    // 终止条件：上一帧 fp 不在同一页，或为 0
+    if(prev == 0 || PGROUNDDOWN(prev) != base)
+      break;
+    fp = prev;
+  }
 }
